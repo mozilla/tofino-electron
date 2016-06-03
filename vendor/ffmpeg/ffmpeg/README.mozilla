@@ -1,0 +1,7 @@
+This directory contains files used in ffmpeg library builds for tofino builds.
+The files are a subset of those used in a full ffmpeg release and are downloaded
+from Chromium's fork of ffmpeg: https://chromium.googlesource.com/chromium/third_party/ffmpeg
+The specific revision used as a base is include in the FFMPEG_REVISION file at
+the root of this source code repository.
+The only modifications to the files are those from the patch file at the root
+of this source code repository.
