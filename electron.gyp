@@ -160,7 +160,11 @@
                 '<(libchromiumcontent_dir)/snapshot_blob.bin',
                 'external_binaries/d3dcompiler_47.dll',
                 'external_binaries/xinput1_3.dll',
+                'vendor/ffmpeg/out/Default/ffmpeg.dll',
               ],
+              'files/': [
+                [ 'exclude', '<(libchromiumcontent_dir)/ffmpeg.dll' ],
+              ]
             },
           ],
         }, {
@@ -199,7 +203,11 @@
                 '<(libchromiumcontent_dir)/views_resources_200_percent.pak',
                 '<(libchromiumcontent_dir)/natives_blob.bin',
                 '<(libchromiumcontent_dir)/snapshot_blob.bin',
+                'vendor/ffmpeg/out/Default/lib/libffmpeg.so',
               ],
+              'files/': [
+                [ 'exclude', '<(libchromiumcontent_dir)/libffmpeg.so' ],
+              ]
             },
           ],
         }],  # OS=="linux"
@@ -549,7 +557,11 @@
               'destination': '<(PRODUCT_DIR)/<(product_name) Framework.framework/Versions/A/Libraries',
               'files': [
                 '<@(copied_libraries)',
+                'vendor/ffmpeg/out/Default/libffmpeg.dylib',
               ],
+              'files/': [
+                [ 'exclude', '<(libchromiumcontent_dir)/libffmpeg.dylib' ],
+              ]
             },
           ],
           'postbuilds': [
