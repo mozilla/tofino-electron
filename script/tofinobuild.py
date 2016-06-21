@@ -9,7 +9,7 @@ from lib.util import download, execute, get_host_arch
 
 
 SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-YASM_URL = 'http://www.tortall.net/projects/yasm/releases/yasm-1.3.0-win64.exe'
+YASM_URL = 'http://www.tortall.net/projects/yasm/releases/yasm-1.3.0-win32.exe'
 
 
 def main():
