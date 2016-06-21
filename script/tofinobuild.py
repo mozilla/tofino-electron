@@ -27,7 +27,7 @@ def main():
 
   if sys.platform == 'win32':
     download('Downloading yasm',
-             'http://www.tortall.net/projects/yasm/releases/yasm-1.3.0-win64.exe',
+             'http://www.tortall.net/projects/yasm/releases/yasm-1.3.0-win32.exe',
              os.path.join('vendor', 'ffmpeg', 'yasm', 'yasm.exe'))
 
   args = ['-y', '--target_arch=' + target_arch]
