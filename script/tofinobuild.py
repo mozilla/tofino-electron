@@ -3,12 +3,46 @@
 import os
 import subprocess
 import sys
+import tempfile
+import urlparse
+import urllib
+import shutil
 
-from lib.config import PLATFORM
+from lib.config import PLATFORM, BASE_URL, LIBCHROMIUMCONTENT_COMMIT
 from lib.util import download, execute, rm_rf, scoped_env, get_host_arch, import_vs_env
 
 
 SOURCE_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+PLATFORM_KEY = {
+  'cygwin': 'win',
+  'darwin': 'osx',
+  'linux2': 'linux',
+  'win32': 'win',
+}[sys.platform]
+
+
+def path2url(path):
+    return urlparse.urljoin(
+      'file:', urllib.pathname2url(path))
+
+
+# Libchromiumcontent is big. Really big. Sometimes you have to retry to get it
+# all if your connection isn't perfect.
+def retry_download(base_url, filename, target_dir):
+    url = "%s/%s" % (base_url, filename)
+    target = os.path.join(target_dir, filename)
+    args = ["-o", target, "--url", url]
+
+    for i in range(0, 10):
+        try:
+            subprocess.check_call(["curl"] + args)
+            return
+        except subprocess.CalledProcessError as e:
+            print("Download attempt failed with %d" % (e.returncode))
+            if i == 0:
+                args += ["-C", "-"]
+
+    raise Exception("Unable to complete download of %s in 10 attempts." % filename)
 
 
 def main():
@@ -30,8 +64,18 @@ def main():
              'http://www.tortall.net/projects/yasm/releases/yasm-1.3.0-win32.exe',
              os.path.join('vendor', 'ffmpeg', 'yasm', 'yasm.exe'))
 
-  args = ['-y', '--target_arch=' + target_arch]
+  LCC_BASE_URL = "%s/%s/%s/%s" % (BASE_URL, PLATFORM_KEY, target_arch, LIBCHROMIUMCONTENT_COMMIT)
+  temp_dir = tempfile.mkdtemp()
+  target_dir = os.path.join(temp_dir, PLATFORM_KEY, target_arch, LIBCHROMIUMCONTENT_COMMIT)
+  os.makedirs(target_dir)
+
+  retry_download(LCC_BASE_URL, "libchromiumcontent.zip", target_dir)
+  retry_download(LCC_BASE_URL, "libchromiumcontent-static.zip", target_dir)
+
+  args = ['-y', '--target_arch=' + target_arch, '-u', path2url(temp_dir)]
   run_script('bootstrap.py', args)
+
+  shutil.rmtree(temp_dir)
 
   build_ffmpeg(target_arch)
 
