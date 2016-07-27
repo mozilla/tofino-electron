@@ -790,6 +790,14 @@ EXOTIC_INCLUDE_REGEX = re.compile('#\s*include\s+[^"<\s].+')
 # Prefix added to renamed files as part of
 RENAME_PREFIX = 'autorename'
 
+# Match an absolute path to a generated auotorename_ file.
+RENAME_REGEX = re.compile('.*' + RENAME_PREFIX + '_.+');
+
+# Content for the rename file. #includes the original file to ensure the two
+# files stay in sync.
+RENAME_CONTENT = """// File automatically generated. See crbug.com/495833.
+#include "{0}"
+"""
 
 def GetIncludedSources(file_path, source_dir, include_set):
   """ Recurse over include tree, accumulating absolute paths to all included
@@ -941,8 +949,10 @@ def FixObjectBasenameCollisions(disjoint_sets, all_sources):
     for rename in renames:
       print 'Fixing basename collision: %s -> %s' % (rename.old_name,
                                                      rename.new_name)
+      with open(rename.new_name, "w") as new_file:
+        _, basename = os.path.split(rename.old_name)
+        new_file.write(RENAME_CONTENT.format(basename))
 
-      shutil.copy2(rename.old_name, rename.new_name)
       source_set.sources.remove(rename.old_name)
       source_set.sources.add(rename.new_name)
       all_renames.add(rename.new_name)
@@ -1012,6 +1022,12 @@ def main():
   for source_set in sets:
     for source in source_set.sources:
       GetIncludedSources(source, source_dir, sources_to_check)
+
+  # Remove autorename_ files now that we've grabbed their underlying includes.
+  # We generated autorename_ files above and should not consider them for
+  # licensing or credits.
+  sources_to_check = filter(lambda s: not RENAME_REGEX.search(s),
+                            sources_to_check)
 
   if not CheckLicensesForStaticLinking(sources_to_check, source_dir,
                                        options.print_licenses):
