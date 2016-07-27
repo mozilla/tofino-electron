@@ -1026,7 +1026,6 @@ ffmpeg/libavcodec/txd.c
 ffmpeg/libavcodec/ulti.c
 ffmpeg/libavcodec/ulti_cb.h
 ffmpeg/libavcodec/unary.h
-ffmpeg/libavcodec/utils.c
 ffmpeg/libavcodec/utvideo.c
 ffmpeg/libavcodec/utvideo.h
 ffmpeg/libavcodec/utvideodec.c
@@ -1265,8 +1264,6 @@ ffmpeg/libavcodec/x86/vc1dsp.asm
 ffmpeg/libavcodec/x86/vc1dsp.h
 ffmpeg/libavcodec/x86/vc1dsp_init.c
 ffmpeg/libavcodec/x86/vc1dsp_mmx.c
-ffmpeg/libavcodec/x86/videodsp_init.c
-ffmpeg/libavcodec/x86/vorbisdsp_init.c
 ffmpeg/libavcodec/x86/vp6dsp.asm
 ffmpeg/libavcodec/x86/vp6dsp_init.c
 ffmpeg/libavcodec/x86/vp9dsp_init.c
@@ -1576,9 +1573,7 @@ ffmpeg/libavformat/oma.c
 ffmpeg/libavformat/oma.h
 ffmpeg/libavformat/omadec.c
 ffmpeg/libavformat/omaenc.c
-ffmpeg/libavformat/options.c
 ffmpeg/libavformat/paf.c
-ffmpeg/libavformat/pcm.c
 ffmpeg/libavformat/pcmdec.c
 ffmpeg/libavformat/pcmenc.c
 ffmpeg/libavformat/pjsdec.c
@@ -1734,7 +1729,6 @@ ffmpeg/libavformat/unix.c
 ffmpeg/libavformat/url-test.c
 ffmpeg/libavformat/urldecode.c
 ffmpeg/libavformat/urldecode.h
-ffmpeg/libavformat/utils.c
 ffmpeg/libavformat/v210.c
 ffmpeg/libavformat/vag.c
 ffmpeg/libavformat/vc1dec.c
@@ -1748,7 +1742,6 @@ ffmpeg/libavformat/vocenc.c
 ffmpeg/libavformat/vpk.c
 ffmpeg/libavformat/vplayerdec.c
 ffmpeg/libavformat/vqf.c
-ffmpeg/libavformat/w64.c
 ffmpeg/libavformat/wavenc.c
 ffmpeg/libavformat/wc3movie.c
 ffmpeg/libavformat/webm_chunk.c
@@ -1787,7 +1780,6 @@ ffmpeg/libavutil/blowfish.c
 ffmpeg/libavutil/blowfish.h
 ffmpeg/libavutil/cast5.c
 ffmpeg/libavutil/cast5.h
-ffmpeg/libavutil/cpu.c
 ffmpeg/libavutil/des.c
 ffmpeg/libavutil/des.h
 ffmpeg/libavutil/file.c
@@ -1825,8 +1817,6 @@ ffmpeg/libavutil/tablegen.h
 ffmpeg/libavutil/tree.c
 ffmpeg/libavutil/tree.h
 ffmpeg/libavutil/utf8.c
-ffmpeg/libavutil/x86/cpu.c
-ffmpeg/libavutil/x86/float_dsp_init.c
 ffmpeg/libavutil/x86/Makefile
 ffmpeg/libavutil/x86/pixelutils.asm
 ffmpeg/libavutil/x86/pixelutils.h
