@@ -33,6 +33,7 @@
 #include "brightray/browser/brightray_paths.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_accessibility_state.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/client_certificate_delegate.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/render_frame_host.h"
@@ -305,6 +306,31 @@ void App::OnLogin(LoginHandler* login_handler,
   // Default behavior is to always cancel the auth.
   if (!prevent_default)
     login_handler->CancelAuth();
+}
+
+bool App::CanCreateWindow(const GURL& opener_url,
+                          const GURL& opener_top_level_frame_url,
+                          const GURL& source_origin,
+                          WindowContainerType container_type,
+                          const std::string& frame_name,
+                          const GURL& target_url,
+                          const content::Referrer& referrer,
+                          WindowOpenDisposition disposition,
+                          const blink::WebWindowFeatures& features,
+                          bool user_gesture,
+                          bool opener_suppressed,
+                          content::ResourceContext* context,
+                          int render_process_id,
+                          int opener_render_view_id,
+                          int opener_render_frame_id,
+                          bool* no_javascript_access) {
+  // just a reminder that we are on the IO thread
+  // and need to be careful about v8 isolate usage
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+
+  *no_javascript_access = false;
+
+  return true;
 }
 
 void App::OnCreateWindow(const GURL& target_url,

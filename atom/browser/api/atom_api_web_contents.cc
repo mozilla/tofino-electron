@@ -10,6 +10,7 @@
 #include "atom/browser/api/atom_api_debugger.h"
 #include "atom/browser/api/atom_api_session.h"
 #include "atom/browser/api/atom_api_window.h"
+#include "atom/browser/api/event.h"
 #include "atom/browser/atom_browser_client.h"
 #include "atom/browser/atom_browser_context.h"
 #include "atom/browser/atom_browser_main_parts.h"
@@ -47,7 +48,6 @@
 #include "chrome/browser/printing/print_preview_message_handler.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/common/view_messages.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/navigation_details.h"
@@ -120,22 +120,6 @@ struct Converter<PrintSettings> {
     dict.Get("silent", &(out->silent));
     dict.Get("printBackground", &(out->print_background));
     return true;
-  }
-};
-
-template<>
-struct Converter<WindowOpenDisposition> {
-  static v8::Local<v8::Value> ToV8(v8::Isolate* isolate,
-                                   WindowOpenDisposition val) {
-    std::string disposition = "other";
-    switch (val) {
-      case CURRENT_TAB: disposition = "default"; break;
-      case NEW_FOREGROUND_TAB: disposition = "foreground-tab"; break;
-      case NEW_BACKGROUND_TAB: disposition = "background-tab"; break;
-      case NEW_POPUP: case NEW_WINDOW: disposition = "new-window"; break;
-      default: break;
-    }
-    return mate::ConvertToV8(isolate, disposition);
   }
 };
 
@@ -269,7 +253,9 @@ WebContents::WebContents(v8::Isolate* isolate,
 }
 
 WebContents::WebContents(v8::Isolate* isolate,
-                         const mate::Dictionary& options)
+                         const mate::Dictionary& options,
+                         const content::WebContents::CreateParams*
+                             create_params)
     : embedder_(nullptr),
       type_(BROWSER_WINDOW),
       request_id_(0),
@@ -305,10 +291,12 @@ WebContents::WebContents(v8::Isolate* isolate,
   content::WebContents* web_contents;
   if (IsGuest()) {
     scoped_refptr<content::SiteInstance> site_instance =
+        create_params ? create_params->site_instance :
         content::SiteInstance::CreateForURL(
             session->browser_context(), GURL("chrome-guest://fake-host"));
     content::WebContents::CreateParams params(
-        session->browser_context(), site_instance);
+        create_params ? *create_params : content::WebContents::CreateParams(
+        session->browser_context(), site_instance));
     guest_delegate_.reset(new WebViewGuestDelegate);
     params.guest_delegate = guest_delegate_.get();
     web_contents = content::WebContents::Create(params);
@@ -316,7 +304,9 @@ WebContents::WebContents(v8::Isolate* isolate,
     bool transparent = false;
     options.Get("transparent", &transparent);
 
-    content::WebContents::CreateParams params(session->browser_context());
+    content::WebContents::CreateParams params(
+        create_params ? *create_params : content::WebContents::CreateParams(
+        session->browser_context()));
     auto* view = new OffScreenWebContentsView(
         transparent, base::Bind(&WebContents::OnPaint, base::Unretained(this)));
     params.view = view;
@@ -325,8 +315,20 @@ WebContents::WebContents(v8::Isolate* isolate,
     web_contents = content::WebContents::Create(params);
     view->SetWebContents(web_contents);
   } else {
-    content::WebContents::CreateParams params(session->browser_context());
+    content::WebContents::CreateParams params(
+        create_params ? *create_params : content::WebContents::CreateParams(
+        session->browser_context()));
     web_contents = content::WebContents::Create(params);
+  }
+
+  std::string delayed_load_url;
+  if (options.Get("delayedLoadUrl", &delayed_load_url)) {
+    const GURL url(delayed_load_url);
+
+    delayed_open_url_params_.reset(
+        new content::OpenURLParams(
+          url, content::Referrer(), CURRENT_TAB,
+          ui::PAGE_TRANSITION_LINK, false));
   }
 
   Observe(web_contents);
@@ -392,6 +394,123 @@ bool WebContents::AddMessageToConsole(content::WebContents* source,
   }
 }
 
+bool WebContents::ShouldCreateWebContents(
+    content::WebContents* web_contents,
+    int32_t route_id,
+    int32_t main_frame_route_id,
+    int32_t main_frame_widget_route_id,
+    WindowContainerType window_container_type,
+    const std::string& frame_name,
+    const GURL& target_url,
+    const std::string& partition_id,
+    content::SessionStorageNamespace* session_storage_namespace) {
+
+  if (IsGuest()) {
+    return true;
+  } else {
+    Emit("-new-window", target_url, frame_name, NEW_FOREGROUND_TAB);
+  }
+
+  return false;
+}
+
+void WebContents::WebContentsCreated(content::WebContents* source_contents,
+                                int opener_render_frame_id,
+                                const std::string& frame_name,
+                                const GURL& target_url,
+                                content::WebContents* new_contents) {
+  v8::Locker locker(isolate());
+  v8::HandleScope handle_scope(isolate());
+
+  content::NavigationController::LoadURLParams load_url_params(target_url);
+  CreateFrom(isolate(), new_contents)->delayed_load_url_params_.reset(
+    new content::NavigationController::LoadURLParams(load_url_params));
+}
+
+void WebContents::AddNewContents(content::WebContents* source,
+                    content::WebContents* new_contents,
+                    WindowOpenDisposition disposition,
+                    const gfx::Rect& initial_rect,
+                    bool user_gesture,
+                    bool* was_blocked) {
+  v8::Locker locker(isolate());
+  v8::HandleScope handle_scope(isolate());
+
+  std::string target_url = "";
+  auto url_params = CreateFrom(isolate(), new_contents)->
+                                                delayed_load_url_params_.get();
+  if (url_params) {
+    target_url = url_params->url.spec();
+    CreateFrom(isolate(), new_contents)->
+        delayed_load_url_params_.reset(nullptr);
+  }
+
+  // set webPreferences
+  base::DictionaryValue* web_preferences =
+    WebContentsPreferences::FromWebContents(new_contents)->web_preferences();
+  std::unique_ptr<base::DictionaryValue> options(new base::DictionaryValue);
+  options->Set(options::kWebPreferences, web_preferences->CreateDeepCopy());
+  if (target_url != "")
+    options->SetString("delayedLoadUrl", target_url);
+
+  if (disposition == NEW_FOREGROUND_TAB || disposition == NEW_BACKGROUND_TAB) {
+    // fire off the tab open event
+    auto new_tab_event = v8::Local<v8::Object>::Cast(
+                                        mate::Event::Create(isolate()).ToV8());
+    mate::Dictionary(isolate(), new_tab_event).Set("sender",
+                                                        GetWrapper());
+    node::Environment* env = node::Environment::GetCurrent(isolate());
+    // the url will be set in ResumeLoadingCreatedWebContents
+    mate::EmitEvent(isolate(),
+                  env->process_object(),
+                  "ELECTRON_GUEST_VIEW_MANAGER_TAB_OPEN",
+                  new_tab_event,
+                  "about:blank",
+                  "",
+                  disposition,
+                  *options);
+  } else if (disposition == NEW_POPUP || disposition == NEW_WINDOW) {
+    // Set windowOptions
+    std::unique_ptr<base::DictionaryValue> browser_options(
+                                                    new base::DictionaryValue);
+    browser_options->SetInteger("height", initial_rect.height());
+    browser_options->SetInteger("width", initial_rect.width());
+    browser_options->SetInteger("x", initial_rect.x());
+    browser_options->SetInteger("y", initial_rect.y());
+    options->Set("windowOptions", std::move(browser_options));
+
+    // fire off the window open event
+    auto window_open_event = v8::Local<v8::Object>::Cast(
+                                        mate::Event::Create(isolate()).ToV8());
+    mate::Dictionary(isolate(), window_open_event).Set(
+                                              "sender", GetWrapper());
+    node::Environment* env = node::Environment::GetCurrent(isolate());
+    // the url will be set in ResumeLoadingCreatedWebContents
+    mate::EmitEvent(isolate(),
+                  env->process_object(),
+                  "ELECTRON_GUEST_WINDOW_MANAGER_WINDOW_OPEN",
+                  window_open_event,
+                  "about:blank",
+                  "",
+                  disposition,
+                  *options);
+  }
+}
+
+bool WebContents::ShouldResumeRequestsForCreatedWindow() {
+  // Always return false here since we need to defer loading the created
+  // window until after we have attached a new delegate to the new webcontents
+  // (which happens asynchronously).
+  return false;
+}
+
+bool WebContents::IsAttached() {
+  if (guest_delegate_)
+    return guest_delegate_->IsAttached();
+
+  return owner_window() != nullptr;
+}
+
 void WebContents::OnCreateWindow(const GURL& target_url,
                                  const std::string& frame_name,
                                  WindowOpenDisposition disposition) {
@@ -404,6 +523,9 @@ void WebContents::OnCreateWindow(const GURL& target_url,
 content::WebContents* WebContents::OpenURLFromTab(
     content::WebContents* source,
     const content::OpenURLParams& params) {
+  if (params.disposition == SUPPRESS_OPEN)
+    return nullptr;
+
   if (params.disposition != CURRENT_TAB) {
     if (type_ == BROWSER_WINDOW || type_ == OFF_SCREEN)
       Emit("-new-window", params.url, "", params.disposition);
@@ -416,7 +538,16 @@ content::WebContents* WebContents::OpenURLFromTab(
   if (Emit("will-navigate", params.url))
     return nullptr;
 
-  return CommonWebContentsDelegate::OpenURLFromTab(source, params);
+  auto api_web_contents = CreateFrom(isolate(), source);
+  if (api_web_contents->IsAttached()) {
+    CommonWebContentsDelegate::OpenURLFromTab(source, params);
+  } else {
+    api_web_contents->delayed_open_url_params_.reset(
+        new content::OpenURLParams(params));
+    return nullptr;
+  }
+
+  return source;
 }
 
 void WebContents::BeforeUnloadFired(content::WebContents* tab,
@@ -808,6 +939,20 @@ WebContents::Type WebContents::GetType() const {
 
 bool WebContents::Equal(const WebContents* web_contents) const {
   return GetID() == web_contents->GetID();
+}
+
+void WebContents::ResumeLoadingCreatedWebContents() {
+  if (delayed_open_url_params_.get()) {
+    if (delayed_open_url_params_->url ==
+        web_contents()->GetLastCommittedURL()) {
+      web_contents()->GetController().LoadIfNecessary();
+    } else {
+      OpenURLFromTab(web_contents(), *delayed_open_url_params_.get());
+      delayed_open_url_params_.reset(nullptr);
+    }
+    return;
+  }
+  GetWebContents()->ResumeLoadingCreatedWebContents();
 }
 
 void WebContents::LoadURL(const GURL& url, const mate::Dictionary& options) {
@@ -1566,6 +1711,15 @@ mate::Handle<WebContents> WebContents::CreateFrom(
 mate::Handle<WebContents> WebContents::Create(
     v8::Isolate* isolate, const mate::Dictionary& options) {
   return mate::CreateHandle(isolate, new WebContents(isolate, options));
+}
+
+// static
+mate::Handle<WebContents> WebContents::CreateWithParams(
+    v8::Isolate* isolate,
+    const mate::Dictionary& options,
+    const content::WebContents::CreateParams& params) {
+  return mate::CreateHandle(isolate,
+                                  new WebContents(isolate, options, &params));
 }
 
 }  // namespace api
