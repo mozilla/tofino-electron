@@ -5,6 +5,7 @@
 #ifndef ATOM_BROWSER_WEB_VIEW_GUEST_DELEGATE_H_
 #define ATOM_BROWSER_WEB_VIEW_GUEST_DELEGATE_H_
 
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/browser_plugin_guest_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
 
@@ -36,6 +37,9 @@ class WebViewGuestDelegate : public content::BrowserPluginGuestDelegate,
   WebViewGuestDelegate();
   ~WebViewGuestDelegate() override;
 
+  content::WebContents* CreateNewGuestWindow(
+      const content::WebContents::CreateParams& create_params) override;
+
   void Initialize(api::WebContents* api_web_contents);
 
   // Called when the WebContents is going to be destroyed.
@@ -45,6 +49,15 @@ class WebViewGuestDelegate : public content::BrowserPluginGuestDelegate,
   // and normal sizes.
   void SetSize(const SetSizeParams& params);
 
+  // Returns the routing ID of the guest proxy in the owner's renderer process.
+  // This value is only valid after attachment or first navigation.
+  int proxy_routing_id() const { return guest_proxy_routing_id_; }
+
+  bool IsAttached();
+
+  void RegisterGuest(mate::Handle<api::WebContents> guest,
+      int guest_instance_id);
+  int GetNextInstanceId();
  protected:
   // content::WebContentsObserver:
   void DidFinishNavigation(
@@ -52,6 +65,7 @@ class WebViewGuestDelegate : public content::BrowserPluginGuestDelegate,
 
   // content::BrowserPluginGuestDelegate:
   void DidAttach(int guest_proxy_routing_id) final;
+  void DidDetach() final;
   content::WebContents* GetOwnerWebContents() const final;
   void GuestSizeChanged(const gfx::Size& new_size) final;
   void SetGuestHost(content::GuestHost* guest_host) final;
@@ -101,6 +115,8 @@ class WebViewGuestDelegate : public content::BrowserPluginGuestDelegate,
   bool is_full_page_plugin_;
 
   api::WebContents* api_web_contents_;
+
+  int guest_proxy_routing_id_;
 
   DISALLOW_COPY_AND_ASSIGN(WebViewGuestDelegate);
 };

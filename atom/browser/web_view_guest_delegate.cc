@@ -2,16 +2,23 @@
 // Use of this source code is governed by the MIT license that can be
 // found in the LICENSE file.
 
+#include "atom/browser/api/atom_api_session.h"
+#include "atom/browser/atom_browser_context.h"
 #include "atom/browser/web_view_guest_delegate.h"
-
+#include "atom/browser/web_contents_preferences.h"
 #include "atom/browser/api/atom_api_web_contents.h"
+#include "atom/browser/api/event.h"
+#include "atom/browser/native_window.h"
 #include "atom/common/native_mate_converters/gurl_converter.h"
+#include "atom/common/node_includes.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/guest_host.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "native_mate/dictionary.h"
 
 namespace atom {
 
@@ -26,7 +33,8 @@ WebViewGuestDelegate::WebViewGuestDelegate()
     : guest_host_(nullptr),
       auto_size_enabled_(false),
       is_full_page_plugin_(false),
-      api_web_contents_(nullptr) {
+      api_web_contents_(nullptr),
+      guest_proxy_routing_id_(-1) {
 }
 
 WebViewGuestDelegate::~WebViewGuestDelegate() {
@@ -41,6 +49,77 @@ void WebViewGuestDelegate::Destroy() {
   // Give the content module an opportunity to perform some cleanup.
   guest_host_->WillDestroy();
   guest_host_ = nullptr;
+}
+
+content::WebContents* WebViewGuestDelegate::CreateNewGuestWindow(
+                            const content::WebContents::CreateParams& params) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  auto isolate = api_web_contents_->isolate();
+  v8::Locker locker(isolate);
+  v8::HandleScope handle_scope(isolate);
+
+  // window options will come from features that needs to be passed through
+  mate::Dictionary options = mate::Dictionary::CreateEmpty(isolate);
+  options.Set("isGuest", true);
+
+  int guest_instance_id = GetNextInstanceId();
+  options.Set(options::kGuestInstanceID, guest_instance_id);
+
+  // TODO(bridiver) should we create a new site instance
+  // from web_contents_impl.cc
+  // scoped_refptr<SiteInstance> site_instance =
+  //     params.opener_suppressed && !is_guest
+  //         ? SiteInstance::CreateForURL(GetBrowserContext(),
+  //             params.target_url)
+  //         : source_site_instance;
+
+  if (params.site_instance) {
+    auto session = atom::api::Session::CreateFrom(isolate,
+            static_cast<AtomBrowserContext*>(
+                params.site_instance->GetBrowserContext()));
+    options.Set("session", session);
+  }
+
+  // get the underlying contents::WebContents object
+  mate::Handle<api::WebContents> new_api_web_contents =
+          api::WebContents::CreateWithParams(isolate, options, params);
+  content::WebContents* web_contents = new_api_web_contents->GetWebContents();
+  RegisterGuest(new_api_web_contents, guest_instance_id);
+
+  return web_contents;
+}
+
+void WebViewGuestDelegate::RegisterGuest(mate::Handle<api::WebContents> guest,
+    int guest_instance_id) {
+  auto isolate = api_web_contents_->isolate();
+  v8::HandleScope handle_scope(isolate);
+
+  auto add_guest_event =
+            v8::Local<v8::Object>::Cast(mate::Event::Create(isolate).ToV8());
+  node::Environment* env = node::Environment::GetCurrent(isolate);
+  mate::EmitEvent(isolate,
+                  env->process_object(),
+                  "ELECTRON_GUEST_VIEW_MANAGER_REGISTER_GUEST",
+                  add_guest_event,
+                  guest,
+                  guest_instance_id);
+}
+
+int WebViewGuestDelegate::GetNextInstanceId() {
+  auto isolate = api_web_contents_->isolate();
+  v8::HandleScope handle_scope(isolate);
+
+  // get the next guest id and assign it to options and webPreferences
+  auto next_instance_id_event = v8::Local<v8::Object>::Cast(
+                                          mate::Event::Create(isolate).ToV8());
+  node::Environment* env = node::Environment::GetCurrent(isolate);
+  mate::EmitEvent(isolate,
+                  env->process_object(),
+                  "ELECTRON_GUEST_VIEW_MANAGER_NEXT_INSTANCE_ID",
+                  next_instance_id_event);
+  return next_instance_id_event->Get(
+                      mate::StringToV8(isolate, "returnValue"))->NumberValue();
 }
 
 void WebViewGuestDelegate::SetSize(const SetSizeParams& params) {
@@ -105,8 +184,14 @@ void WebViewGuestDelegate::DidFinishNavigation(
   }
 }
 
+bool WebViewGuestDelegate::IsAttached() {
+  return guest_proxy_routing_id_ != -1;
+}
+
 void WebViewGuestDelegate::DidAttach(int guest_proxy_routing_id) {
-  api_web_contents_->Emit("did-attach");
+  guest_proxy_routing_id_ = guest_proxy_routing_id;
+  api_web_contents_->Emit("did-attach", guest_proxy_routing_id);
+  api_web_contents_->ResumeLoadingCreatedWebContents();
 }
 
 content::WebContents* WebViewGuestDelegate::GetOwnerWebContents() const {
@@ -124,6 +209,10 @@ void WebViewGuestDelegate::SetGuestHost(content::GuestHost* guest_host) {
   guest_host_ = guest_host;
 }
 
+void WebViewGuestDelegate::DidDetach() {
+  guest_proxy_routing_id_ = -1;
+}
+
 void WebViewGuestDelegate::WillAttach(
     content::WebContents* embedder_web_contents,
     int element_instance_id,
@@ -131,6 +220,10 @@ void WebViewGuestDelegate::WillAttach(
     const base::Closure& completion_callback) {
   embedder_web_contents_ = embedder_web_contents;
   is_full_page_plugin_ = is_full_page_plugin;
+  // update the owner window
+  auto relay = NativeWindowRelay::FromWebContents(embedder_web_contents_);
+  if (relay)
+    api_web_contents_->SetOwnerWindow(relay->window.get());
   completion_callback.Run();
 }
 
